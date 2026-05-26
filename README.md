@@ -261,12 +261,6 @@ aem-modernize-extension/
 
 ---
 
-## License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
 ## Acknowledgements
 
 Built on top of the [AEM Modernize Tools](https://opensource.adobe.com/aem-modernize-tools/) open-source project by Adobe.
