@@ -1,18 +1,29 @@
-# AEM Modernize Tools — Chrome Extension - V1.0
+# AEM Modernize Tools — Chrome Extension - V1.1
 
 A Chrome extension that brings the power of [AEM Modernize Tools](https://opensource.adobe.com/aem-modernize-tools/) directly into your browser. Scan any AEM page for legacy components and static templates, then trigger component, page structure, or full conversion jobs without leaving the editor.
 
 ---
 
+## What's New in V1.1
+
+- **Zero configuration** — no server URL, username, or password needed. The extension auto-detects the AEM environment from the active tab URL and uses your existing browser session cookies
+- **Removed Settings page** — no options page, no manual configuration at all
+- **History sub-tabs** — filter job history by All / Component / Structure / Full, newest jobs shown first
+- **Full Conversion mode** — trigger structure + component conversion in a single job
+- **History injected into page context** — fetches job data using browser session, no auth headers needed
+
+---
+
 ## Features
 
-- **Auto-scan AEM pages** — detects legacy components and static templates using native AEM Modernize Tools endpoints, zero configuration required
+- **Zero configuration** — auto-detects AEM environment (Cloud SDK, AEMaaCS, AEM 6.5) from tab URL and uses existing browser session
+- **Auto-scan AEM pages** — detects legacy components and static templates using native AEM Modernize Tools endpoints
 - **Floating agent panel** — appears automatically on every AEM editor page showing SERVER, PAGE, component counts, rule counts, and conversion status
 - **Popup scan** — manually scan the current page and see results in the extension popup
-- **Three conversion modes** — trigger Component Conversion, Page Structure conversion, or Full Conversion (structure + components in one job) directly from the browser
-- **Job history** — view past conversion jobs fetched live from `/var/aem-modernize/job-data/` with click-to-open job details
+- **Three conversion modes** — Component Conversion, Page Structure, and Full Conversion (structure + components in one job)
+- **Job history** — view past conversion jobs fetched live from `/var/aem-modernize/job-data/`, filtered by type, newest first, click any row to open job details
 - **Light theme UI** — clean, professional design consistent across popup and floating agent panel
-- **Works with AEM Cloud SDK, AEMaaCS, and AEM 6.5** — Bearer token support for cloud environments
+- **Works with AEM Cloud SDK, AEMaaCS, and AEM 6.5** — no Bearer token needed, browser session handles auth
 
 ---
 
@@ -45,38 +56,31 @@ A Chrome extension that brings the power of [AEM Modernize Tools](https://openso
 
 ## Configuration
 
-Click the **⚙ gear icon** in the popup (or right-click the extension → Options) to open Settings.
+**None required.** Just install the extension, open any AEM editor page, and click **Scan Page**.
 
-### Server Connection
-
-| Field | Description |
-|---|---|
-| **AEM Author URL** | Your AEM Author instance, e.g. `http://localhost:4502` — no trailing slash |
-| **Username** | AEM username — default `admin` for local |
-| **Password** | AEM password — default `admin` for local |
-| **Developer / Bearer Token** | IMS Bearer token for AEMaaCS cloud environments — bypasses CSRF entirely (recommended for cloud) |
-
-### Auth Modes
-
-| Environment | Recommended Auth | Notes |
-|---|---|---|
-| Local AEM Cloud SDK (`localhost`) | Basic Auth — `admin / admin` | CSRF bypassed automatically |
-| AEM as a Cloud Service | Bearer / Dev Token | Obtain from AEM Developer Console |
-| AEM 6.5 on-prem | Basic Auth with your credentials | CSRF handled via token in request body |
-
-**To get a Bearer token on AEMaaCS:**
-1. Go to your AEM environment → Developer Console
-2. Navigate to the **Integrations** tab
-3. Click **Get Local Development Token** and copy the access token
-4. Paste it into the **Developer / Bearer Token** field in Settings
+The extension automatically:
+- Detects the AEM server from the active tab URL (`localhost:4502`, `author-p12345-e67890.adobeaemcloud.com`, etc.)
+- Uses your existing browser session cookies for all requests — no login needed in the extension
 
 ---
 
 ## How It Works
 
+### Auto-Detection
+
+The extension detects the AEM environment from the active tab URL:
+
+| URL Pattern | Environment |
+|---|---|
+| `author-p<id>-e<id>.adobeaemcloud.com` | AEM as a Cloud Service |
+| `localhost:4502` | AEM Cloud SDK (local) |
+| Any page with `/editor.html/content/` | AEM 6.5 on-prem or other |
+
+All requests use `credentials: 'include'` and `chrome.scripting.executeScript` to run in the page context — the browser automatically sends the AEM session cookies, no manual auth configuration needed.
+
 ### Detection — Zero Configuration
 
-The extension uses **AEM Modernize Tools native endpoints** — the same endpoints the AEM Modernize Tools UI uses internally. No manual path configuration required.
+The extension uses **AEM Modernize Tools native endpoints** — the same endpoints the AEM Modernize Tools UI uses internally:
 
 | Step | Endpoint | Returns |
 |---|---|---|
@@ -140,22 +144,21 @@ The extension uses **AEM Modernize Tools native endpoints** — the same endpoin
 }
 ```
 
-> All payloads are confirmed from AEM Modernize Tools UI network traces.
+> All payloads confirmed from AEM Modernize Tools UI network traces.
 
 ### CSRF Handling
 
-AEM's `CsrfFilter` requires a valid CSRF token **and** a `Referer` header matching the AEM origin. Chrome extension service workers have no `Referer`, so the extension uses `chrome.scripting.executeScript` to inject the conversion fetch **into the active AEM tab**. This ensures:
+AEM's `CsrfFilter` requires a valid CSRF token **and** a `Referer` header matching the AEM origin. Chrome extension service workers have no `Referer`, so the extension uses `chrome.scripting.executeScript` to inject all fetches **into the active AEM tab**. This ensures:
 
 1. The fetch carries the correct `Referer` header automatically (set by the browser)
-2. The CSRF token is fetched from `/libs/granite/csrf/token.json` in the same page context
-3. Felix dispatcher accepts the request and routes it to `ScheduleConversionJobServlet`
-4. The servlet uses service user `aem-modernize-convert-service` for all JCR writes — no special ACLs needed on `/var/aem-modernize/`
-
-For cloud environments, a **Bearer token** bypasses CSRF entirely — AEM treats token-based auth as API/service access and skips `CsrfFilter`.
+2. Session cookies are sent automatically — no manual auth needed
+3. The CSRF token is fetched from `/libs/granite/csrf/token.json` in the same page context
+4. Felix dispatcher accepts the request and routes it to `ScheduleConversionJobServlet`
+5. The servlet uses service user `aem-modernize-convert-service` for all JCR writes — no special ACLs needed on `/var/aem-modernize/`
 
 ### Job History
 
-History is read live from AEM's JCR — no local storage involved:
+History is fetched live from AEM's JCR — injected into the page context for correct session auth:
 
 ```
 /var/aem-modernize/job-data/component/YYYY/MM/DD/<jobName>
@@ -163,10 +166,9 @@ History is read live from AEM's JCR — no local storage involved:
 /var/aem-modernize/job-data/full/YYYY/MM/DD/<jobName>
 ```
 
-Click any row in the History tab to open the AEM job detail page:
-```
-/mnt/overlay/aem-modernize/content/component/job/view.html/<jobDataPath>
-```
+- Sorted **newest first** by job path (YYYY/MM/DD guarantees chronological order)
+- Filtered by **All / Component / Structure / Full** sub-tabs
+- Click any row to open the AEM job detail page
 
 ---
 
@@ -174,21 +176,18 @@ Click any row in the History tab to open the AEM job detail page:
 
 ```
 aem-modernize-extension/
-├── manifest.json           # Chrome MV3 manifest
-├── popup.html              # Extension popup UI
-├── options.html            # Settings page
+├── manifest.json       # Chrome MV3 manifest
+├── popup.html          # Extension popup UI
 ├── icons/
 │   ├── icon16.png
 │   ├── icon48.png
 │   └── icon128.png
 ├── scripts/
-│   ├── background.js       # Service worker — SCAN_PAGE, TEST_CONNECTION, FETCH_RULES, history
-│   ├── content.js          # Floating agent panel — auto-scans AEM editor pages
-│   ├── popup.js            # Popup UI — scan, conversion actions, history tab
-│   └── options.js          # Settings — save/load/test server connection
+│   ├── background.js   # Service worker — SCAN_PAGE, TEST_CONNECTION, env detection
+│   ├── content.js      # Floating agent panel — auto-scans AEM editor pages
+│   └── popup.js        # Popup UI — scan, conversion actions, history tab
 └── styles/
-    ├── popup.css           # Popup + floating panel styles (light theme)
-    └── options.css         # Settings page styles (light theme)
+    └── popup.css       # Popup + floating panel styles (light theme)
 ```
 
 ---
@@ -203,21 +202,23 @@ aem-modernize-extension/
 │  │  popup.js    │ ──────────────────►│  background.js   │   │
 │  │  (popup UI)  │                    │  (service worker)│   │
 │  └──────────────┘                    │                  │   │
-│                                      │  GET             │   │
-│  ┌──────────────┐   bgMsg(SCAN_PAGE) │  .component.rules│   │
-│  │  content.js  │ ──────────────────►│  .template.rules │   │
-│  │  (page panel)│                    │  jcr:content.json│   │
+│                                      │  GET (with       │   │
+│  ┌──────────────┐   bgMsg(SCAN_PAGE) │  session cookies)│   │
+│  │  content.js  │ ──────────────────►│  .component.rules│   │
+│  │  (page panel)│                    │  .template.rules │   │
 │  └──────────────┘                    └──────────────────┘   │
 │         │                                                   │
 │         │ chrome.scripting.executeScript()                  │
 │         ▼                                                   │
-│  ┌─────────────────────────────────┐                        │
-│  │  AEM Editor Tab (page context)  │                        │
-│  │                                 │  POST create.json      │
-│  │  1. GET csrf/token.json         │ ─────────────────────► │
-│  │  2. POST .../job/create.json    │  with Referer header   │
-│  │  (browser sets Referer auto)    │                        │
-│  └─────────────────────────────────┘                        │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  AEM Editor Tab (page context — same origin as AEM)  │   │
+│  │                                                      │   │
+│  │  Conversion:  GET csrf/token → POST create.json      │   │
+│  │  History:     GET /var/aem-modernize/.5.json         │   │
+│  │                                                      │   │
+│  │  Browser sends session cookies automatically         │   │
+│  │  Browser sets Referer header automatically           │   │
+│  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                       │
                       ▼
@@ -235,6 +236,7 @@ aem-modernize-extension/
 - **AEM Author** instance with `aem-modernize-tools` package installed and **Active**
   - Verify at: `<aem-url>/system/console/bundles` → search `aem-modernize`
   - Job UI accessible at: `/mnt/overlay/aem-modernize/content/component/job/view.html`
+- **Be logged into AEM** in the same Chrome browser — the extension uses your existing session
 - **User permissions:**
   - `jcr:read` on content pages being converted
   - Permission to invoke the conversion servlets (admin has this by default)
@@ -258,11 +260,7 @@ If empty, the `ComponentRewriteRuleServiceImpl` OSGi service may need `search.pa
 
 ### HTTP 403 on conversion
 
-| Scenario | Fix |
-|---|---|
-| Local Cloud SDK / AEM 6.5 | Should work with Basic Auth — check AEM error logs for root cause |
-| AEMaaCS cloud | Add a Bearer/Dev token in Settings |
-| Any | Verify the aem-modernize-tools bundle is **Active** |
+Verify the aem-modernize-tools bundle is **Active** at `/system/console/bundles`. Also confirm you are logged into AEM in the same Chrome browser session.
 
 ### HTTP 404 on conversion
 
@@ -278,6 +276,7 @@ The package is not installed. Download from [GitHub Releases](https://github.com
 
 - At least one job must exist under `/var/aem-modernize/job-data/` in CRXDE
 - Run a conversion first (via this extension or the AEM Modernize Tools UI)
+- Click **↺ Refresh** to force a fresh fetch
 
 ---
 
@@ -293,9 +292,9 @@ No build step required. Edit files and reload:
 
 | API | Used for |
 |---|---|
-| `chrome.storage.local` | Server config, last scan result (persists across popup close) |
-| `chrome.scripting.executeScript` | Inject conversion fetch into AEM tab (correct Referer) |
-| `chrome.tabs.query` | Get active tab URL to extract content path |
+| `chrome.scripting.executeScript` | Inject all AEM fetches into tab context (session cookies + Referer) |
+| `chrome.tabs.query` | Get active tab URL for environment auto-detection |
+| `chrome.storage.local` | Persist last scan result across popup open/close |
 | `chrome.runtime.sendMessage` | Popup / content script → background worker |
 
 ---
