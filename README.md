@@ -1,4 +1,4 @@
-# AEM Modernize Tools — Chrome Extension
+# AEM Modernize Tools — Chrome Extension - V1.0
 
 A Chrome extension that brings the power of [AEM Modernize Tools](https://opensource.adobe.com/aem-modernize-tools/) directly into your browser. Scan any AEM page for legacy components and static templates, then trigger component, page structure, or full conversion jobs without leaving the editor.
 
