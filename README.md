@@ -16,6 +16,14 @@ A Chrome extension that brings the power of [AEM Modernize Tools](https://openso
 
 ---
 
+## Screenshots
+
+| Popup — Scan Results | Floating Agent Panel |
+|---|---|
+| Components to Convert, Matching Rules, Template status, Full/Component/Structure Run buttons | SERVER / PAGE context, COMPONENTS / COMP RULES / TMPL RULES counts, Convert Components + ⚡ Full buttons |
+
+---
+
 ## Installation
 
 ### From source (Developer Mode)
@@ -165,6 +173,7 @@ aem-modernize-extension/
 ├── manifest.json           # Chrome MV3 manifest
 ├── popup.html              # Extension popup UI
 ├── options.html            # Settings page
+├── README.md
 ├── icons/
 │   ├── icon16.png
 │   ├── icon48.png
@@ -189,7 +198,7 @@ aem-modernize-extension/
 │                                                             │
 │  ┌──────────────┐   bgMsg(SCAN_PAGE) ┌──────────────────┐   │
 │  │  popup.js    │ ──────────────────►│  background.js   │   │
-│  │  (popup UI)  │                    │ (service worker) │   │
+│  │  (popup UI)  │                    │  (service worker)│   │
 │  └──────────────┘                    │                  │   │
 │                                      │  GET             │   │
 │  ┌──────────────┐   bgMsg(SCAN_PAGE) │  .component.rules│   │
@@ -301,3 +310,63 @@ No build step required. Edit files and reload:
 ## Acknowledgements
 
 Built on top of the [AEM Modernize Tools](https://opensource.adobe.com/aem-modernize-tools/) open-source project by Adobe.
+
+---
+
+## Claude AI Skill — Writing Transformation Rules
+
+This repository includes a Claude skill for **authoring AEM Modernize Tools transformation rules**. The skill teaches Claude the complete rule authoring format so you can describe a component migration in plain English and get back production-ready JCR node rules or OSGi configs.
+
+### Skill location
+
+```
+skills/aem-modernize-rules/SKILL.md
+```
+
+### What the skill covers
+
+| Topic | Details |
+|---|---|
+| **Component rewrite rules** | Full JCR node structure in XML and JSON, all pattern matching options, all replacement features |
+| **Page structure rules** | OSGi factory config format, every property explained, multi-tenant patterns |
+| **Policy import rules** | Same structure as component rules, different OSGi PID |
+| **Property expressions** | `${ }` copy syntax, default values, if/else fallback, boolean negation |
+| **Property transforms** | `cq:rewriteProperties` (regex), `cq:rewriteMapProperties` (value mapping), `cq:rewriteConsolidateProperties` (merge) |
+| **Child node handling** | `cq:copyChildren`, `cq:rewriteMapChildren`, `cq:orderBefore` |
+| **Aggregation rules** | Merge multiple sibling components into one (e.g. image+title+text → Teaser) |
+| **Decision guide** | Flowchart for choosing the right feature per scenario |
+| **Common mistakes** | Table of pitfalls and correct approaches |
+
+### Example prompts
+
+Once the skill is loaded, you can ask Claude things like:
+
+```
+Write a component rewrite rule that converts myapp/components/title
+to core/wcm/components/title/v3/title, copying jcr:title and
+mapping the "type" property values: "heading1"→"h1", "heading2"→"h2"
+```
+
+```
+Generate an OSGi page structure rule config for converting the
+/apps/myapp/templates/homepage static template to the editable
+template at /conf/myapp/settings/wcm/templates/homepage.
+The old parsys "par" should be renamed to "root/container".
+```
+
+```
+Write an aggregation rule that converts three sibling foundation
+components (image, title, text) into a single Core Component teaser,
+mapping fileReference from image, jcr:title from title, and
+text from the text component.
+```
+
+### How to use the skill with Claude
+
+If you are using [Claude.ai](https://claude.ai):
+
+1. Open a new conversation
+2. Upload `skills/aem-modernize-rules/SKILL.md` as a file attachment
+3. Say: *"Use this skill to write a rule that converts..."*
+
+If you are using the Anthropic API, include the skill content in your system prompt or as a document in the messages array.
