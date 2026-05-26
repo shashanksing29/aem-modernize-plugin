@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AEM Modernize — Settings</title>
+  <link rel="stylesheet" href="styles/options.css" />
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div class="logo">
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <rect x="1" y="1" width="9" height="9" rx="2" fill="#2563eb"/>
+        <rect x="12" y="1" width="9" height="9" rx="2" fill="#2563eb" opacity=".5"/>
+        <rect x="1" y="12" width="9" height="9" rx="2" fill="#2563eb" opacity=".5"/>
+        <rect x="12" y="12" width="9" height="9" rx="2" fill="#2563eb"/>
+      </svg>
+    </div>
+    <div>
+      <h1>AEM Modernize Settings</h1>
+      <div class="sub">Server connection configuration</div>
+    </div>
+  </div>
+
+  <!-- Server Connection -->
+  <div class="card">
+    <div class="card-title">Server Connection</div>
+
+    <div class="field">
+      <label for="serverUrl">AEM Author URL</label>
+      <input type="url" id="serverUrl" placeholder="http://localhost:4502" autocomplete="off" />
+      <span class="field-hint">Your AEM Author instance URL. No trailing slash.</span>
+    </div>
+
+    <div class="field">
+      <label for="serverUser">Username</label>
+      <input type="text" id="serverUser" placeholder="admin" autocomplete="off" />
+    </div>
+
+    <div class="field">
+      <label for="serverPass">Password</label>
+      <input type="password" id="serverPass" placeholder="••••••••" autocomplete="new-password" />
+      <span class="field-hint">For local AEM (<code>localhost</code>) leave as <code>admin / admin</code>. Basic Auth is used and CSRF is skipped automatically.</span>
+    </div>
+
+    <div class="field">
+      <label for="devToken">Developer / Bearer Token <span style="color:var(--a);font-size:9px;margin-left:4px">recommended for cloud</span></label>
+      <textarea id="devToken" rows="3" placeholder="Paste your IMS Bearer token here (for AEM as a Cloud Service or Stage environments)" autocomplete="off"></textarea>
+      <span class="field-hint">
+        When a token is provided it is sent as <code>Authorization: Bearer &lt;token&gt;</code> —
+        completely bypasses AEM CSRF checks. Leave blank to use Basic Auth.
+      </span>
+    </div>
+
+    <div class="info-box" id="authModeBox">
+      Auth mode: <strong id="authModeLabel">Basic Auth (local)</strong>
+    </div>
+
+    <div class="status-bar" id="connStatus"></div>
+    <div class="btn-row">
+      <button id="saveConnBtn">Save Connection</button>
+      <button id="testConnBtn" class="btn-secondary">Test Connection</button>
+    </div>
+  </div>
+
+
+  <!-- How it works -->
+  <div class="card">
+    <div class="card-title">How Detection Works</div>
+    <p class="field-hint" style="line-height:1.8">
+      The extension uses the <strong>AEM Modernize Tools native endpoints</strong> — no manual path configuration needed:<br><br>
+      <strong>Component scan:</strong> <code>.component.pagedata.json?path=&lt;page&gt;</code> — returns which components have matching conversion rules.<br><br>
+      <strong>Template status:</strong> <code>.template.rules.json?path=&lt;page&gt;</code> — if rules are returned the page uses a legacy static template; if empty it's already using an editable template.<br><br>
+      <strong>Rule fetching:</strong> <code>.component.rules.json</code> and <code>.template.rules.json</code> — fetch the exact rules to include in conversion job payloads.<br><br>
+      Credentials are stored locally in Chrome storage and only sent to your configured AEM server.
+    </p>
+  </div>
+
+</div>
+<script src="scripts/options.js"></script>
+</body>
+</html>
