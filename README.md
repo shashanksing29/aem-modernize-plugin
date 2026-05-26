@@ -20,7 +20,9 @@ A Chrome extension that brings the power of [AEM Modernize Tools](https://openso
 
 | Popup — Scan Results | Floating Agent Panel |
 |---|---|
-| Components to Convert, Matching Rules, Template status, Full/Component/Structure Run buttons | SERVER / PAGE context, COMPONENTS / COMP RULES / TMPL RULES counts, Convert Components + ⚡ Full buttons |
+| Components to Convert, Matching Rules, Template status, Full/Component/Structure Run buttons **<img width="131" height="160" alt="image" src="https://github.com/user-attachments/assets/782d139c-3453-40ca-980e-99a0a86af4ef" />
+** | SERVER / PAGE context, COMPONENTS / COMP RULES / TMPL RULES counts, Convert Components + ⚡ Full buttons <img width="191" height="297" alt="image" src="https://github.com/user-attachments/assets/cadefec9-3c0b-4109-94fe-ffb531fa7a7f" />
+ |
 
 ---
 
