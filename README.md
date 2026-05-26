@@ -319,7 +319,7 @@ This repository includes a Claude skill for **authoring AEM Modernize Tools tran
 ### Skill location
 
 ```
-skills/aem-modernize-rules/SKILL.md
+skills/aem-modernize-rules.md
 ```
 
 ### What the skill covers
