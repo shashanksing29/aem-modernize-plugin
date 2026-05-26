@@ -53,6 +53,36 @@ function isLocalUrl(url) {
   return url && (url.includes('localhost') || url.includes('127.0.0.1'));
 }
 
+// Detect AEM environment type and base URL from any AEM page URL
+// Supports:
+//   AEMaaCS:   https://author-p12345-e67890.adobeaemcloud.com/...
+//   Cloud SDK: http://localhost:4502/...
+//   AEM 6.5:   http://hostname:4502/... or https://author.mycompany.com/...
+function detectAEMEnvironment(tabUrl) {
+  if (!tabUrl) return null;
+  try {
+    const u = new URL(tabUrl);
+    const origin = u.origin; // e.g. "https://author-p107537-e1544285.adobeaemcloud.com"
+
+    // AEMaaCS pattern: author-p<programId>-e<envId>.adobeaemcloud.com
+    if (u.hostname.match(/^author-p\d+-e\d+\.adobeaemcloud\.com$/)) {
+      return { base: origin, type: 'cloud', isLocal: false };
+    }
+    // AEM Cloud SDK / local
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+      return { base: origin, type: 'local', isLocal: true };
+    }
+    // AEM 6.5 on-prem or any other author hostname
+    // Heuristic: if path contains /editor.html/content/ or /sites.html — it's AEM
+    if (u.pathname.includes('/editor.html/') || u.pathname.includes('/sites.html') || u.pathname.includes('/ui#/aem/')) {
+      return { base: origin, type: 'onprem', isLocal: false };
+    }
+    return { base: origin, type: 'unknown', isLocal: false };
+  } catch (_) {
+    return null;
+  }
+}
+
 async function aemFetch(url, auth, opts) {
   opts = opts || {};
   try {
@@ -127,8 +157,19 @@ async function handleScanPage({ url, user, pass, devToken, pageUrl }) {
     const contentPath = extractContentPathFromURL(pageUrl);
     if (!contentPath) return { ok: false, error: 'Could not extract content path from URL: ' + pageUrl };
 
-    const auth = makeAuth(user, pass, devToken);
-    const base = url.replace(/\/$/, '');
+    // Auto-detect environment from page URL — use tab origin if no server configured
+    const envDetected = detectAEMEnvironment(pageUrl);
+    const base = (url && url.trim()) ? url.replace(/\/$/, '')
+               : envDetected         ? envDetected.base
+               : null;
+    if (!base) return { ok: false, error: 'Could not determine AEM server URL. Configure it in Settings or open an AEM editor page.' };
+
+    // Auth: use configured credentials if set, otherwise rely on browser session cookies
+    // Browser cookies are automatically sent for same-origin requests (background fetch)
+    // For cross-origin background requests, cookies are NOT sent — but content script
+    // fetches (executeScript) run in page context and DO send session cookies automatically.
+    const useSessionCookies = !user && !devToken;
+    const auth = useSessionCookies ? null : makeAuth(user, pass, devToken);
 
     // ── Use AEM Modernize Tools native endpoints ───────────────────────
     // These are the same endpoints the tool UI uses — no need for

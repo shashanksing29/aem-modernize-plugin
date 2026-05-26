@@ -23,20 +23,12 @@
           <span class="brand-sub">Tools Assistant</span>
         </div>
       </div>
-      <div class="header-actions">
-        <button class="icon-btn" id="settingsBtn" title="Settings">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-            <circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.5"/>
-            <path d="M8 1v2M8 13v2M1 8h2M13 8h2M2.93 2.93l1.41 1.41M11.66 11.66l1.41 1.41M2.93 13.07l1.41-1.41M11.66 4.34l1.41-1.41" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
-      </div>
+
     </header>
 
     <div class="server-strip" id="serverStrip">
       <div class="server-dot" id="serverDot"></div>
-      <span class="server-label" id="serverLabel">No server configured</span>
-      <button class="configure-btn" id="configureBtn">Configure</button>
+      <span class="server-label" id="serverLabel">Detecting…</span>
     </div>
 
     <nav class="tab-bar">
@@ -136,6 +128,12 @@
       <div class="history-header">
         <div class="section-label">Job History</div>
         <button class="refresh-hist-btn" id="refreshHistBtn" title="Refresh from AEM">↺ Refresh</button>
+      </div>
+      <div class="hist-type-tabs">
+        <button class="hist-type-tab active" data-type="all">All</button>
+        <button class="hist-type-tab" data-type="component">Component</button>
+        <button class="hist-type-tab" data-type="structure">Structure</button>
+        <button class="hist-type-tab" data-type="full">Full</button>
       </div>
       <div id="historyList" class="history-list"></div>
     </div>

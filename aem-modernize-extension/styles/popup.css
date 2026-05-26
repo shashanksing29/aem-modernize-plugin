@@ -297,3 +297,26 @@ body {
 .conv-action-row-full { border-color: rgba(37,99,235,.25); background: var(--ad); }
 .conv-action-row-full .conv-action-name { color: var(--a); }
 .conv-action-divider { height: 1px; background: var(--b); margin: 2px 0; }
+
+/* ── History sub-tabs ── */
+.hist-type-tabs {
+  display: flex; gap: 4px; padding: 2px 0 6px;
+}
+.hist-type-tab {
+  flex: 1; font-size: 10px; font-weight: 600; padding: 4px 6px;
+  border: 1px solid var(--b); border-radius: var(--rad);
+  background: var(--bg); color: var(--td); cursor: pointer;
+  transition: all .15s; white-space: nowrap;
+}
+.hist-type-tab:hover  { border-color: var(--a); color: var(--a); }
+.hist-type-tab.active { background: var(--a); border-color: var(--a); color: #fff; }
+
+/* ── History type badges ── */
+.hist-badge {
+  font-size: 8px; padding: 1px 5px; border-radius: 3px;
+  font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  display: inline-block; margin-right: 3px; vertical-align: middle;
+}
+.hist-badge-comp   { background: #eff4ff; color: var(--a);   border: 1px solid #bfdbfe; }
+.hist-badge-struct { background: #fefce8; color: #d97706;    border: 1px solid #fde68a; }
+.hist-badge-full   { background: #f0fdf4; color: var(--green); border: 1px solid #bbf7d0; }

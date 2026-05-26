@@ -32,6 +32,8 @@ let jobHistory      = [];
 
 // ── Init ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  // Clear any legacy stored serverConfig — auto-detect replaces it
+  chrome.storage.local.remove(['serverConfig', 'detectionPaths', 'cachedRules']);
   await loadState();
   detectCurrentPage();
   renderServerStrip();
@@ -41,17 +43,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   initHistoryTab();
   initScanBtn();
 
-  const settingsBtn = document.getElementById('settingsBtn');
-  if (settingsBtn) settingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
-
   // History loads on-demand when tab is clicked
 });
 
 // ── Load state from storage ────────────────────────────────
 function loadState() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['serverConfig', 'jobHistory'], (data) => {
-      if (data.serverConfig) serverConfig = data.serverConfig;
+    chrome.storage.local.get(['jobHistory', 'lastScanResult'], (data) => {
       jobHistory = data.jobHistory || [];
       resolve();
     });
@@ -85,27 +83,27 @@ async function renderServerStrip() {
   const label = document.getElementById('serverLabel');
   if (!dot || !label) return;
 
-  if (!serverConfig.url) {
-    dot.className = 'server-dot';
-    label.textContent = 'No server configured';
-    return;
-  }
-
-  label.textContent = serverConfig.url;
-  dot.className = 'server-dot'; // neutral while testing
-
-  try {
-    const result = await bgMsg('TEST_CONNECTION', {
-      url: serverConfig.url, user: serverConfig.user, pass: serverConfig.pass
-    });
-    dot.className = result.ok ? 'server-dot connected' : 'server-dot error';
-  } catch (_) {
-    dot.className = 'server-dot error';
-  }
+  // Always auto-detect from active tab
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs && tabs[0];
+    if (tab && tab.url) {
+      try {
+        const u = new URL(tab.url);
+        const isAEM = tab.url.includes('/editor.html/') || tab.url.includes('/sites.html') ||
+                       tab.url.includes('.adobeaemcloud.com') ||
+                       (u.hostname === 'localhost') || (u.hostname === '127.0.0.1');
+        if (isAEM) {
+          dot.className    = 'server-dot ok';
+          label.textContent = u.host;
+          return;
+        }
+      } catch (_) {}
+    }
+    dot.className    = 'server-dot';
+    label.textContent = 'Open an AEM editor page';
+  });
 }
 
-const configureBtn = document.getElementById('configureBtn');
-if (configureBtn) configureBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 // ── Tabs ──────────────────────────────────────────────────
 function initTabs() {
@@ -204,12 +202,6 @@ async function handleRun() {
   const btnText   = document.getElementById('runBtnText');
 
   if (!path) { showToast('Enter a source path', 'error'); return; }
-  if (!serverConfig.url) {
-    showToast('Configure server first', 'error');
-    chrome.runtime.openOptionsPage();
-    return;
-  }
-
   // Loading state
   if (btn)     btn.classList.add('loading');
   if (btnText) btnText.textContent = 'Starting…';
@@ -217,10 +209,7 @@ async function handleRun() {
 
   try {
     const result = await bgMsg('SUBMIT_JOB', {
-      url:       serverConfig.url,
-      user:      serverConfig.user,
-      pass:      serverConfig.pass,
-      devToken:  serverConfig.devToken || '',
+      url: '', user: '', pass: '', devToken: '',
       path,
       tool:      selectedTool,
       recursive: document.getElementById('optRecursive')?.checked || false,
@@ -267,11 +256,6 @@ async function handleRun() {
 }
 
 function initNavLinks() {
-  if (!serverConfig.url) {
-    renderNavLinks([]);
-    return;
-  }
-  // Probe in background — render whatever we find
   probeNavLinks().then(renderNavLinks);
 }
 
@@ -280,7 +264,8 @@ async function probeNavLinks() {
   await Promise.all(TOOL_PROBES.map(async (tool) => {
     for (const path of tool.candidates) {
       try {
-        const result = await bgMsg('TEST_PATH', { url: serverConfig.url, user: serverConfig.user, pass: serverConfig.pass, path });
+        const base2  = tabs2 && tabs2[0] ? new URL(tabs2[0].url).origin : '';
+  const result = await bgMsg('TEST_PATH', { url: base2, user: '', pass: '', path });
         if (result && result.ok) {
           results.push({ label: tool.label, path, installed: true });
           return;
@@ -297,10 +282,7 @@ function renderNavLinks(links) {
   const list = document.getElementById('navLinkList');
   if (!list) return;
 
-  if (!serverConfig.url) {
-    list.innerHTML = '<div class="nav-link-loading">Configure server to see available tools</div>';
-    return;
-  }
+
 
   if (!links.length) {
     list.innerHTML = '<div class="nav-link-loading">Checking…</div>';
@@ -326,7 +308,12 @@ function renderNavLinks(links) {
   // Bind clicks on newly rendered buttons
   list.querySelectorAll('.nav-link-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const url = serverConfig.url.replace(/\/$/, '') + btn.dataset.path;
+      chrome.tabs.query({ active: true, currentWindow: true }, (navTabs) => {
+        const navBase = navTabs && navTabs[0] ? new URL(navTabs[0].url).origin : '';
+        chrome.tabs.create({ url: navBase + btn.dataset.path });
+      });
+      return;
+      const url = ''; // unreachable — kept for structure
       chrome.tabs.create({ url });
     });
   });
@@ -351,11 +338,24 @@ const JOB_DATA_PATHS = [
   { path: '/var/aem-modernize/job-data/full',      label: 'Full',        viewBase: '/mnt/overlay/aem-modernize/content/full/job/view.html' },
 ];
 
+let allHistoryJobs  = [];   // cache from last fetch
+let activeHistType  = 'all'; // current sub-tab filter
+
 function initHistoryTab() {
   const refreshBtn = document.getElementById('refreshHistBtn');
   if (refreshBtn) refreshBtn.addEventListener('click', loadAndRenderHistory);
 
-  // Auto-load when tab clicked
+  // Sub-tab filter buttons
+  document.querySelectorAll('.hist-type-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.hist-type-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeHistType = btn.dataset.type;
+      renderHistory(allHistoryJobs);
+    });
+  });
+
+  // Auto-load when main History tab clicked
   document.querySelectorAll('.tab').forEach(tab => {
     if (tab.dataset.tab === 'history') {
       tab.addEventListener('click', loadAndRenderHistory);
@@ -366,85 +366,87 @@ function initHistoryTab() {
 async function loadAndRenderHistory() {
   const list = document.getElementById('historyList');
   if (!list) return;
-  if (!serverConfig.url) {
-    list.innerHTML = emptyStateHTML('Not connected', 'Configure server to view job history');
+
+  // Get active AEM tab — must inject fetch into page context for session cookies
+  const histTabs = await new Promise(r => chrome.tabs.query({ active: true, currentWindow: true }, r));
+  const histTab  = histTabs && histTabs[0];
+  if (!histTab || !histTab.url) {
+    list.innerHTML = emptyStateHTML('No AEM page open', 'Navigate to an AEM editor page first');
     return;
   }
+
+  let base = '';
+  try { base = new URL(histTab.url).origin; } catch (_) {}
+  if (!base) {
+    list.innerHTML = emptyStateHTML('No AEM page open', 'Navigate to an AEM editor page first');
+    return;
+  }
+
   list.innerHTML = '<div class="history-loading">Loading jobs from AEM…</div>';
 
   try {
-    const jobs = await fetchAEMJobs();
+    // Inject fetch into the AEM tab so session cookies are sent automatically
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: histTab.id },
+      func: async (base, jobDataPaths) => {
+        // Fetch deeply enough to cover year/month/day/job — use 5.json depth
+        // Cache-bust with timestamp to always get fresh data
+        const cb = '?_=' + Date.now();
+        const allJobs = [];
+
+        // Walk the JCR tree: /var/aem-modernize/job-data/<type>/<year>/<month>/<day>/<jobName>
+        // pathParts starts as ['/var/aem-modernize/job-data/<type>'] = length 1
+        // After walking: year(2), month(3), day(4), jobName(5) → job node at depth 5
+        function walkJobs(node, pathParts, label, viewBase) {
+          if (!node || typeof node !== 'object') return;
+          for (const [key, val] of Object.entries(node)) {
+            if (key.startsWith('jcr:') || key.startsWith(':') || key === 'rep:policy') continue;
+            if (typeof val !== 'object' || val === null) continue;
+            const newParts = [...pathParts, key];
+            // depth 5 = type/year/month/day/jobName → this IS a job node
+            if (newParts.length === 5) {
+              const jobPath = newParts.join('/');
+              allJobs.push({
+                name:      val['jcr:title'] || val.name || key,
+                jobPath,
+                label,
+                viewUrl:   base + viewBase + jobPath,
+                startedAt: val['jcr:created'] || val.startTime || '',
+                status:    'completed',
+              });
+            } else {
+              walkJobs(val, newParts, label, viewBase);
+            }
+          }
+        }
+
+        for (const { path, label, viewBase } of jobDataPaths) {
+          try {
+            // Fetch 5 levels deep: type/year/month/day/job — all in one request
+            const r = await fetch(base + path + '.5.json' + cb, { cache: 'no-store' });
+            if (!r.ok) continue;
+            const tree = await r.json();
+            walkJobs(tree, [path], label, viewBase); // path = 1 element, jobs at depth 5
+          } catch (_) {}
+        }
+
+        // Sort newest first using jobPath as reliable tie-breaker
+        // jobPath contains YYYY/MM/DD/jobName which sorts lexicographically = chronologically
+        allJobs.sort((a, b) => b.jobPath.localeCompare(a.jobPath));
+        return allJobs.slice(0, 100);
+      },
+      args: [base, JOB_DATA_PATHS],
+    });
+
+    const jobs = results && results[0] && results[0].result || [];
     renderHistory(jobs);
   } catch (e) {
     list.innerHTML = emptyStateHTML('Could not load jobs', e.message);
   }
 }
 
-async function fetchAEMJobs() {
-  const base = serverConfig.url.replace(/\/$/, '');
-  const auth = serverConfig.devToken
-    ? 'Bearer ' + serverConfig.devToken
-    : 'Basic ' + btoa((serverConfig.user || 'admin') + ':' + (serverConfig.pass || 'admin'));
-
-  const allJobs = [];
-
-  for (const { path, label, viewBase } of JOB_DATA_PATHS) {
-    try {
-      // Fetch the job-data type node — get year folders
-      const r = await fetch(base + path + '.2.json', { headers: { Authorization: auth } });
-      if (!r.ok) continue;
-      const typeNode = await r.json();
-
-      // Walk year/month/day/jobName nodes
-      for (const [year, yearNode] of Object.entries(typeNode)) {
-        if (year.startsWith('jcr:') || year.startsWith(':') || year === 'rep:policy') continue;
-        if (typeof yearNode !== 'object') continue;
-
-        for (const [month, monthNode] of Object.entries(yearNode)) {
-          if (month.startsWith('jcr:') || month.startsWith(':')) continue;
-          if (typeof monthNode !== 'object') continue;
-
-          // Fetch deeper — day/job level
-          try {
-            const dr = await fetch(base + path + '/' + year + '/' + month + '.3.json',
-              { headers: { Authorization: auth } });
-            if (!dr.ok) continue;
-            const dayData = await dr.json();
-
-            for (const [day, dayNode] of Object.entries(dayData)) {
-              if (day.startsWith('jcr:') || day.startsWith(':')) continue;
-              if (typeof dayNode !== 'object') continue;
-
-              for (const [jobName, jobNode] of Object.entries(dayNode)) {
-                if (jobName.startsWith('jcr:') || jobName.startsWith(':')) continue;
-                if (typeof jobNode !== 'object') continue;
-
-                const jobPath = path + '/' + year + '/' + month + '/' + day + '/' + jobName;
-                allJobs.push({
-                  name:      jobNode['jcr:title'] || jobNode.name || jobName,
-                  jobPath,
-                  label,
-                  viewUrl:   base + viewBase + jobPath,
-                  startedAt: jobNode['jcr:created'] || jobNode.startTime || '',
-                  status:    deriveJobStatus(jobNode),
-                });
-              }
-            }
-          } catch (_) {}
-        }
-      }
-    } catch (_) {}
-  }
-
-  // Sort newest first
-  // Sort newest first — parse ISO dates for reliable comparison
-  allJobs.sort((a, b) => {
-    const da = a.startedAt ? new Date(a.startedAt).getTime() : 0;
-    const db = b.startedAt ? new Date(b.startedAt).getTime() : 0;
-    return db - da; // descending: newest first
-  });
-  return allJobs.slice(0, 50);
-}
+// fetchAEMJobs kept for backward compat but history now uses executeScript above
+async function fetchAEMJobs(histBase) { return []; }
 
 function deriveJobStatus(node) {
   // AEM Modernize Tools stores job state in child nodes
@@ -464,27 +466,40 @@ function deriveJobStatus(node) {
 }
 
 function renderHistory(jobs) {
+  // Cache for sub-tab filtering
+  if (jobs) allHistoryJobs = jobs;
   const list = document.getElementById('historyList');
   if (!list) return;
-  if (!jobs || !jobs.length) {
-    list.innerHTML = emptyStateHTML('No jobs found', 'Run a conversion to see job history here');
+
+  // Filter by active sub-tab
+  const typeMap = { component: 'Component', structure: 'Page Structure', full: 'Full' };
+  const filtered = activeHistType === 'all'
+    ? allHistoryJobs
+    : allHistoryJobs.filter(j => j.label && j.label.toLowerCase() === (activeHistType === 'structure' ? 'page structure' : activeHistType));
+
+
+
+  if (!filtered.length) {
+    const msg = activeHistType === 'all' ? 'No jobs found' : 'No ' + (typeMap[activeHistType] || activeHistType) + ' jobs';
+    list.innerHTML = emptyStateHTML(msg, 'Run a conversion to see job history here');
     return;
   }
 
-  list.innerHTML = jobs.map((j) => {
+  list.innerHTML = filtered.map((j) => {
     const statusClass = j.status === 'completed' ? 'completed' : j.status === 'failed' ? 'failed' : 'running';
-    const statusDot   = j.status === 'completed' ? '●' : j.status === 'failed' ? '●' : '●';
-    return '<div class="history-card" data-view-url="' + esc(j.viewUrl) + '" style="cursor:pointer" title="Click to view job details">'
+    const typeBadge   = j.label === 'Component' ? 'hist-badge-comp'
+                      : j.label === 'Page Structure' ? 'hist-badge-struct'
+                      : j.label === 'Full' ? 'hist-badge-full' : '';
+    return '<div class="history-card" data-view-url="' + esc(j.viewUrl) + '" title="Click to view job details">'
       + '<div class="history-icon ' + statusClass + '"></div>'
       + '<div class="history-info">'
-      + '<span class="history-type">' + esc(j.label) + ' — ' + esc(j.name) + '</span>'
+      + '<span class="history-type"><span class="hist-badge ' + typeBadge + '">' + esc(j.label) + '</span> ' + esc(j.name) + '</span>'
       + '<span class="history-path" title="' + esc(j.jobPath) + '">' + esc(j.jobPath) + '</span>'
       + '</div>'
       + '<span class="history-time">' + fmtTime(j.startedAt) + '</span>'
       + '</div>';
   }).join('');
 
-  // Bind click → open job detail in AEM
   list.querySelectorAll('.history-card[data-view-url]').forEach(card => {
     card.addEventListener('click', () => {
       chrome.tabs.create({ url: card.dataset.viewUrl });
@@ -534,12 +549,6 @@ async function triggerScan() {
   const sub     = document.getElementById('scanSub');
   const results = document.getElementById('scanResults');
 
-  if (!serverConfig.url) {
-    showToast('Configure server first', 'error');
-    chrome.runtime.openOptionsPage();
-    return;
-  }
-
   // Loading state
   if (btn) { btn.textContent = '↻ Scanning…'; btn.classList.add('scanning'); }
   if (results) results.style.display = 'none';
@@ -562,10 +571,7 @@ async function triggerScan() {
 
     // Ask background to do the JCR scan directly (most reliable — avoids iframe issues)
     const result = await bgMsg('SCAN_PAGE', {
-      url:      serverConfig.url,
-      user:     serverConfig.user,
-      pass:     serverConfig.pass,
-      devToken: serverConfig.devToken || '',
+      url: '', user: '', pass: '', devToken: '',
       pageUrl:  tab.url,
     });
 
@@ -607,13 +613,18 @@ function renderScanResults(result) {
   // Sub-label
   if (sub) sub.textContent = legacy.length + ' components · ' + compRuleCount + ' rules matched';
 
-  // Environment context
+  // Environment context — from scan result's base URL
   const envServer = document.getElementById('scanEnvServer');
   const envPage   = document.getElementById('scanEnvPage');
   if (envServer) {
-    const url = serverConfig.url || '';
-    envServer.textContent = url.replace(/^https?:\/\//, '') || '—';
-    envServer.title = url;
+    // Read host from active tab URL — most reliable source
+    chrome.tabs.query({ active: true, currentWindow: true }, (envTabs) => {
+      try {
+        const envHost = envTabs && envTabs[0] ? new URL(envTabs[0].url).host : '—';
+        envServer.textContent = envHost;
+        envServer.title = envHost;
+      } catch (_) { envServer.textContent = '—'; }
+    });
   }
   if (envPage && result.contentPath) {
     const parts = result.contentPath.split('/').filter(Boolean);
@@ -765,7 +776,7 @@ function bindConversionActions(pagePath, legacyComponents) {
 }
 
 async function runConversion(tool, pagePath, btn) {
-  if (!serverConfig.url) { showToast('Configure server first', 'error'); return; }
+  // url resolved via auto-detect in triggerScan — should always be set by here
   if (!pagePath)          { showToast('No page path detected', 'error'); return; }
 
   const statusEl = document.getElementById('convStatus');
@@ -786,19 +797,12 @@ async function runConversion(tool, pagePath, btn) {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     let result;
 
-    if (tab && tab.url && tab.url.includes(serverConfig.url.replace('http://', '').replace('https://', ''))) {
-      // Page is on the AEM server — inject directly for correct Referer
-      // Load cached rules path for OSGi configuration
-      const stored = await new Promise(r => chrome.storage.local.get(['serverConfig'], r));
-      const fullConfig = stored.serverConfig || serverConfig;
-      result = await injectConversionFetch(tab.id, fullConfig, pagePath, tool);
+    if (tab && tab.url) {
+      result = await injectConversionFetch(tab.id, {}, pagePath, tool);
     } else {
       // Fallback to background worker
       result = await bgMsg('SUBMIT_JOB', {
-        url:      serverConfig.url,
-        user:     serverConfig.user,
-        pass:     serverConfig.pass,
-        devToken: serverConfig.devToken || '',
+        url: '', user: '', pass: '', devToken: '',
         path:     pagePath,
         tool,
         recursive: false,
@@ -884,8 +888,23 @@ async function injectConversionFetch(tabId, sc, pagePath, tool) {
     'full':            '/mnt/overlay/aem-modernize/content/full/job/create.json',
   };
   const endpoint = ENDPOINTS[tool] || ENDPOINTS['component'];
-  const base     = sc.url.replace(/\/$/, '');
-  const creds    = 'Basic ' + btoa((sc.user || 'admin') + ':' + (sc.pass || 'admin'));
+
+  // Auto-detect base URL from active tab if not configured in settings
+  let base = sc.url ? sc.url.replace(/\/$/, '') : null;
+  if (!base) {
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs && tabs[0] && tabs[0].url) {
+        base = new URL(tabs[0].url).origin;
+      }
+    } catch (_) {}
+  }
+  if (!base) return { ok: false, error: 'Could not determine AEM server URL' };
+
+  // Use explicit credentials if configured, otherwise null = browser session cookies
+  const creds = (sc.user || sc.pass)
+    ? 'Basic ' + btoa((sc.user || 'admin') + ':' + (sc.pass || 'admin'))
+    : null;
 
   try {
     // executeScript injects a function into the page — runs with page origin/Referer
@@ -893,17 +912,25 @@ async function injectConversionFetch(tabId, sc, pagePath, tool) {
       target: { tabId },
       func: async (base, endpoint, creds, devToken, pagePath, compRuleIds, tmplRuleIds, compPaths, tool) => {
         try {
-          const auth = devToken ? 'Bearer ' + devToken : creds;
+          // Auth header: Bearer > Basic > null (session cookies from browser)
+          // When null, the browser automatically sends AEM session cookies since
+          // this code runs in the page context (same origin as AEM)
+          const auth = devToken ? 'Bearer ' + devToken : creds || null;
 
-          // CSRF token — runs in page context so Referer is correct
+          // CSRF token — runs in page context so Referer header is correct
+          // Session cookie auth: CSRF still required; Bearer auth: CSRF skipped
           let csrf = '';
           if (!devToken) {
-            const ct = await fetch(base + '/libs/granite/csrf/token.json', { headers: { Authorization: auth } });
+            const ctHeaders = auth ? { Authorization: auth } : {};
+            const ct = await fetch(base + '/libs/granite/csrf/token.json', {
+              headers: ctHeaders,
+              credentials: 'include', // send session cookies
+            });
             if (ct.ok) { const cj = await ct.json(); csrf = cj.token || ''; }
           }
 
           const headers = {
-            Authorization:  auth,
+            ...(auth ? { Authorization: auth } : {}), // omit header entirely for cookie session
             'CSRF-Token':   csrf,
             'X-CSRF-Token': csrf,
             'Content-Type': 'application/x-www-form-urlencoded',
@@ -941,7 +968,7 @@ async function injectConversionFetch(tabId, sc, pagePath, tool) {
           const body = new URLSearchParams({ data: JSON.stringify(dataObj) });
           if (csrf) body.append(':cq_csrf_token', csrf);
 
-          const r    = await fetch(base + endpoint, { method: 'POST', headers, body: body.toString() });
+          const r    = await fetch(base + endpoint, { method: 'POST', headers, body: body.toString(), credentials: 'include' });
           const text = await r.text();
           let json = null;
           try { json = JSON.parse(text); } catch (_) {}

@@ -32,30 +32,32 @@
   // ── Outer-scope config (populated by init, used by renderPanel) ──
   let serverConfig = {};
 
+  // Detect AEM base URL — if this content script is running, hasContentPath
+  // already confirmed we're on an AEM content page. Just return the origin.
+  function detectAEMBaseFromPage() {
+    try {
+      return window.location.origin;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ── Boot: run scan via background worker ───────────────────
   async function init() {
     // Wait for page to settle — editor pages take time to initialise
     await new Promise(r => setTimeout(r, 2000));
 
-    // Check config first
-    const stored = await new Promise(r =>
-      chrome.storage.local.get(['serverConfig'], r)
-    );
-
-    const sc = stored.serverConfig || {};
-    serverConfig = sc; // make available to renderPanel and other functions
-    if (!sc.url) {
-      showBadge('⚙ AEM Modernize: configure server in Settings', '#f59e0b', true);
-      return;
-    }
+    // Auto-detect base URL — no config needed, session cookies handle auth
+    const base = detectAEMBaseFromPage();
+    serverConfig = { url: base };
 
     showBadge('↻ Scanning page…', '#4f9eff');
 
     const result = await bgMsg('SCAN_PAGE', {
-      url:      sc.url,
-      user:     sc.user,
-      pass:     sc.pass,
-      devToken: sc.devToken || '',
+      url:      '',    // background auto-detects from pageUrl
+      user:     '',
+      pass:     '',
+      devToken: '',
       pageUrl:  window.location.href,
     });
 
@@ -119,7 +121,7 @@
         <div class="aap-env-bar">
           <div class="aap-env-row">
             <span class="aap-env-label">SERVER</span>
-            <span class="aap-env-val" title="${esc(serverConfig.url || '')}">${esc((serverConfig.url || '').replace(/^https?:\/\//, ''))}</span>
+            <span class="aap-env-val">${esc(window.location.host)}</span>
           </div>
           <div class="aap-env-row">
             <span class="aap-env-label">PAGE</span>
@@ -332,7 +334,6 @@
   async function submitConv(d, pagePath, tool, scanResult) {
     const stored = await new Promise(r => chrome.storage.local.get(['serverConfig'], r));
     const sc     = stored.serverConfig || {};
-    if (!sc.url) { setDlgSt(d, '✗ No server configured', 'err'); return; }
 
     const btn = d.querySelector('#acd-confirm');
     btn.disabled    = true;
@@ -343,9 +344,9 @@
     // Referer header, which is what Felix/Sling CSRF filter requires.
     // We do NOT go through the background worker here.
     try {
-      const base  = sc.url.replace(/\/$/, '');
-      const auth  = sc.devToken ? 'Bearer ' + sc.devToken
-                                : 'Basic ' + btoa((sc.user || 'admin') + ':' + (sc.pass || 'admin'));
+      // Auto-detected base — no explicit auth needed, session cookies handle it
+      const base = window.location.origin;
+      const auth = null; // browser sends AEM session cookies automatically
 
       const ENDPOINTS = {
         'component':       '/mnt/overlay/aem-modernize/content/component/job/create.json',
@@ -419,11 +420,12 @@
         method: 'POST',
         headers: {
           'Content-Type':  'application/x-www-form-urlencoded',
-          'Authorization': auth,
+          ...(auth ? { 'Authorization': auth } : {}),
           'CSRF-Token':    csrfToken,
           'X-CSRF-Token':  csrfToken,
         },
-        body: body.toString(),
+        body:        body.toString(),
+        credentials: 'include',
       });
       const finalText = await finalResp.text();
       let finalJson = null;
