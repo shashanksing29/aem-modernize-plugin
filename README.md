@@ -173,7 +173,6 @@ aem-modernize-extension/
 ├── manifest.json           # Chrome MV3 manifest
 ├── popup.html              # Extension popup UI
 ├── options.html            # Settings page
-├── README.md
 ├── icons/
 │   ├── icon16.png
 │   ├── icon48.png
