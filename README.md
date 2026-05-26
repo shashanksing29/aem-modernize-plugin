@@ -365,7 +365,7 @@ text from the text component.
 If you are using [Claude.ai](https://claude.ai):
 
 1. Open a new conversation
-2. Upload `skills/aem-modernize-rules/SKILL.md` as a file attachment
+2. Upload `skills/aem-modernize-rules.md` as a file attachment
 3. Say: *"Use this skill to write a rule that converts..."*
 
 If you are using the Anthropic API, include the skill content in your system prompt or as a document in the messages array.
